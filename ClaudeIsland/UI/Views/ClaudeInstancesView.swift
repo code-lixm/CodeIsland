@@ -80,97 +80,93 @@ struct ClaudeInstancesView: View {
 
     @ViewBuilder
     private func buddyCardView(_ buddy: BuddyInfo) -> some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 8) {
-                // Rarity + species header
-                HStack {
-                    Text(buddy.rarity.stars)
-                        .font(.system(size: 10))
-                        .foregroundColor(buddy.rarity.color)
-                    Text(buddy.rarity.displayName.uppercased())
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundColor(buddy.rarity.color)
-                    Spacer()
-                    Text(buddy.species.rawValue.uppercased())
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.4))
-                }
-                .padding(.horizontal, 12)
-
-                // ASCII art sprite
-                BuddyASCIIView(buddy: buddy)
-                    .frame(height: 60)
-
-                if buddy.isShiny {
-                    Text("✨ SHINY ✨")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(.yellow)
-                }
-
-                // Name
-                Text(buddy.name)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
-
-                // Personality
-                Text("\"" + buddy.personality + "\"")
+        VStack(spacing: 6) {
+            // Header
+            HStack {
+                Text(buddy.rarity.stars)
                     .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.4))
-                    .italic()
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 10)
-
-                // Stats bars
-                if buddy.stats.debugging > 0 {
-                    VStack(spacing: 3) {
-                        buddyStatBar("DEBUGGING", value: buddy.stats.debugging, color: .cyan)
-                        buddyStatBar("PATIENCE", value: buddy.stats.patience, color: .green)
-                        buddyStatBar("CHAOS", value: buddy.stats.chaos, color: .red)
-                        buddyStatBar("WISDOM", value: buddy.stats.wisdom, color: .purple)
-                        buddyStatBar("SNARK", value: buddy.stats.snark, color: .orange)
-                    }
-                    .padding(.horizontal, 8)
+                    .foregroundColor(buddy.rarity.color)
+                Text(buddy.rarity.displayName.uppercased())
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(buddy.rarity.color)
+                Spacer()
+                Text(buddy.species.rawValue.uppercased())
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.3))
+                if buddy.isShiny {
+                    Text("✨")
+                        .font(.system(size: 8))
                 }
-
-                // Back
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        showBuddyCard = false
-                    }
-                } label: {
-                    Text("Back")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(0.5))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.white.opacity(0.08)))
-                }
-                .buttonStyle(.plain)
             }
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+
+            // Left-right layout: ASCII art | stats
+            HStack(alignment: .top, spacing: 8) {
+                // Left: ASCII sprite
+                VStack(spacing: 2) {
+                    BuddyASCIIView(buddy: buddy)
+                        .frame(height: 55)
+                    Text(buddy.name)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                .frame(width: 90)
+
+                // Right: stats + personality
+                VStack(alignment: .leading, spacing: 3) {
+                    if buddy.stats.debugging > 0 {
+                        asciiStatBar("DBG", value: buddy.stats.debugging, color: .cyan)
+                        asciiStatBar("PAT", value: buddy.stats.patience, color: .green)
+                        asciiStatBar("CHS", value: buddy.stats.chaos, color: .red)
+                        asciiStatBar("WIS", value: buddy.stats.wisdom, color: .purple)
+                        asciiStatBar("SNK", value: buddy.stats.snark, color: .orange)
+                    }
+
+                    Text(buddy.personality)
+                        .font(.system(size: 7))
+                        .foregroundColor(.white.opacity(0.25))
+                        .lineLimit(3)
+                        .padding(.top, 2)
+                }
+            }
+            .padding(.horizontal, 8)
+
+            // Back
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    showBuddyCard = false
+                }
+            } label: {
+                Text("Back")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.06)))
+            }
+            .buttonStyle(.plain)
         }
+        .padding(.vertical, 6)
     }
 
-    private func buddyStatBar(_ label: String, value: Int, color: Color) -> some View {
-        HStack(spacing: 4) {
+    /// ASCII-style stat bar: `DBG [████████░░] 64`
+    private func asciiStatBar(_ label: String, value: Int, color: Color) -> some View {
+        let filled = value / 10
+        let empty = 10 - filled
+        let bar = String(repeating: "█", count: filled) + String(repeating: "░", count: empty)
+
+        return HStack(spacing: 3) {
             Text(label)
                 .font(.system(size: 7, weight: .medium, design: .monospaced))
-                .foregroundColor(.white.opacity(0.35))
-                .frame(width: 58, alignment: .trailing)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.white.opacity(0.06))
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(color.opacity(0.6))
-                        .frame(width: geo.size.width * CGFloat(value) / 100.0)
-                }
-            }
-            .frame(height: 5)
+                .foregroundColor(.white.opacity(0.3))
+                .frame(width: 22, alignment: .trailing)
+            Text("[\(bar)]")
+                .font(.system(size: 7, design: .monospaced))
+                .foregroundColor(color.opacity(0.7))
             Text("\(value)")
                 .font(.system(size: 7, design: .monospaced))
-                .foregroundColor(color.opacity(0.6))
-                .frame(width: 18, alignment: .leading)
+                .foregroundColor(color.opacity(0.5))
+                .frame(width: 18, alignment: .trailing)
         }
     }
 
