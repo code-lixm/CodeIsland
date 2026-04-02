@@ -177,19 +177,10 @@ class NotchViewModel: ObservableObject {
 
         switch status {
         case .opened:
-            // Use the actual window frame to determine if click is inside
-            if let windowFrame = NSApp.windows.first(where: { $0.isVisible && $0.title.isEmpty })?.frame {
-                if !windowFrame.contains(location) {
-                    notchClose()
-                    repostClickAt(location)
-                }
-                // If click is inside window frame, let buttons handle it
-            } else {
-                // Fallback to geometry-based check
-                if geometry.isPointOutsidePanel(location, size: openedSize) {
-                    notchClose()
-                    repostClickAt(location)
-                }
+            // Close if click is outside the panel content area
+            if geometry.isPointOutsidePanel(location, size: openedSize) {
+                notchClose()
+                repostClickAt(location)
             }
         case .closed, .popping:
             if geometry.isPointInNotch(location) {

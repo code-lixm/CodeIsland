@@ -101,9 +101,7 @@ struct NotchMenuView: View {
                 .background(Color.white.opacity(0.08))
                 .padding(.vertical, 4)
 
-            // About
-            VersionRow()
-
+            // Quit before version — so it's higher up and clickable
             MenuRow(
                 icon: "xmark.circle",
                 label: L10n.quit,
@@ -111,6 +109,9 @@ struct NotchMenuView: View {
             ) {
                 NSApplication.shared.terminate(nil)
             }
+
+            // About
+            VersionRow()
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
