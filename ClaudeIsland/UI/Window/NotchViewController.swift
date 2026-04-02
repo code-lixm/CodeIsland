@@ -50,18 +50,9 @@ class NotchViewController: NSViewController {
 
             switch vm.status {
             case .opened:
-                let panelSize = vm.openedSize
-                // Panel is centered horizontally, anchored to top
-                // Add generous padding so ALL buttons including bottom ones receive events
-                let panelWidth = panelSize.width + 80
-                let panelHeight = panelSize.height + 60
-                let screenWidth = geometry.screenRect.width
-                return CGRect(
-                    x: (screenWidth - panelWidth) / 2,
-                    y: windowHeight - panelHeight,
-                    width: panelWidth,
-                    height: panelHeight
-                )
+                // Accept mouse events across the entire window when panel is open
+                // The NotchViewModel.handleMouseDown handles closing when clicking outside
+                return CGRect(x: 0, y: 0, width: geometry.screenRect.width, height: windowHeight)
             case .closed, .popping:
                 // When closed, use the notch rect
                 let notchRect = geometry.deviceNotchRect
