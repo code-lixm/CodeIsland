@@ -371,6 +371,24 @@ struct InstanceRow: View {
         }
     }
 
+    /// Status badge text and color
+    private var statusBadge: (text: String, color: Color)? {
+        switch session.phase {
+        case .processing:
+            return ("进行中", Color(red: 0.4, green: 0.91, blue: 0.98))
+        case .compacting:
+            return ("压缩中", Color(red: 0.7, green: 0.4, blue: 0.9))
+        case .waitingForApproval:
+            return ("待审批", Color(red: 0.96, green: 0.62, blue: 0.04))
+        case .waitingForInput:
+            return ("已完成", Color(red: 0.29, green: 0.87, blue: 0.5))
+        case .idle:
+            return ("空闲", Color.white.opacity(0.3))
+        case .ended:
+            return ("已结束", Color.white.opacity(0.25))
+        }
+    }
+
     /// Lighter tint for title text
     private var titleColor: Color {
         switch session.phase {
@@ -398,6 +416,18 @@ struct InstanceRow: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(titleColor)
                             .lineLimit(1)
+
+                        // Status badge
+                        if let badge = statusBadge {
+                            Text(badge.text)
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundColor(badge.color)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule().fill(badge.color.opacity(0.15))
+                                )
+                        }
 
                         Spacer(minLength: 0)
 

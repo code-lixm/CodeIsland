@@ -128,9 +128,10 @@ struct NotchView: View {
     }
 
     /// Extra width for expanding activities (like Dynamic Island)
+    /// Just enough to show status on left wing and count on right wing
     private var expansionWidth: CGFloat {
         if hasActiveSessions {
-            return 80
+            return 240
         }
         return 0
     }
@@ -182,7 +183,7 @@ struct NotchView: View {
             VStack(spacing: 0) {
                 notchLayout
                     .frame(
-                        maxWidth: viewModel.status == .opened ? notchSize.width : nil,
+                        maxWidth: viewModel.status == .opened ? notchSize.width : closedContentWidth,
                         alignment: .top
                     )
                     .padding(
@@ -205,7 +206,7 @@ struct NotchView: View {
                         radius: 6
                     )
                     .frame(
-                        maxWidth: viewModel.status == .opened ? notchSize.width : nil,
+                        maxWidth: viewModel.status == .opened ? notchSize.width : closedContentWidth,
                         maxHeight: viewModel.status == .opened ? notchSize.height : nil,
                         alignment: .top
                     )
@@ -549,51 +550,80 @@ struct CollapsedNotchContent: View {
     @ObservedObject private var buddyReader = BuddyReader.shared
     @AppStorage("usePixelCat") private var usePixelCat: Bool = false
 
-    var body: some View {
-        HStack(spacing: 6) {
-            // Left: pixel cat or buddy emoji pixel art
-            if usePixelCat {
-                PixelCharacterView(state: mostUrgentState)
-                    .scaleEffect(0.28)
-                    .frame(width: 14, height: 14)
-                    .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: true)
-            } else if let buddy = buddyReader.buddy {
-                EmojiPixelView(emoji: buddy.species.emoji, style: .wave)
-                    .scaleEffect(0.3)
-                    .frame(width: 14, height: 14)
-                    .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: true)
-            } else {
-                PixelCharacterView(state: mostUrgentState)
-                    .scaleEffect(0.28)
-                    .frame(width: 14, height: 14)
-                    .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: true)
-            }
-
-            // Center: project name + status (keep project name, don't replace)
-            if let parts = activityTextParts {
-                HStack(spacing: 3) {
-                    Text(parts.project)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.8))
-                    Text(parts.status)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(statusGradient)
-                        .opacity(pulsePhase ? 1.0 : 0.6)
-                }
-                .lineLimit(1)
-                .fixedSize()
-            }
-
-            // Right: session count
-            if activeSessionCount > 0 {
-                Text("×\(activeSessionCount)")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundColor(badgeColor)
-            }
+    /// Status dot color for the left wing
+    private var statusDotColor: Color {
+        switch mostUrgentState {
+        case .working: return Color(red: 0.4, green: 0.91, blue: 0.98) // cyan
+        case .needsYou: return Color(red: 0.96, green: 0.62, blue: 0.04) // amber
+        case .error: return Color(red: 0.94, green: 0.27, blue: 0.27) // red
+        case .done: return Color(red: 0.29, green: 0.87, blue: 0.5) // green
+        case .thinking: return Color(red: 0.7, green: 0.6, blue: 1.0) // purple
+        case .idle: return Color.white.opacity(0.3)
         }
-        .padding(.horizontal, 6)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // ── Left wing (visible left of camera) ──
+            HStack(spacing: 4) {
+                // Pulsing status dot
+                Circle()
+                    .fill(statusDotColor)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: statusDotColor.opacity(0.6), radius: 4)
+                    .opacity(pulsePhase ? 1.0 : 0.4)
+
+                // Buddy icon
+                if usePixelCat {
+                    PixelCharacterView(state: mostUrgentState)
+                        .scaleEffect(0.22)
+                        .frame(width: 12, height: 12)
+                        .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: true)
+                } else if let buddy = buddyReader.buddy {
+                    EmojiPixelView(emoji: buddy.species.emoji, style: .wave)
+                        .scaleEffect(0.24)
+                        .frame(width: 12, height: 12)
+                        .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: true)
+                } else {
+                    PixelCharacterView(state: mostUrgentState)
+                        .scaleEffect(0.22)
+                        .frame(width: 12, height: 12)
+                        .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: true)
+                }
+
+                // Status text
+                if let parts = activityTextParts {
+                    Text(parts.status)
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(statusGradient)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .padding(.leading, 6)
+
+            Spacer()
+
+            // ── Right wing (visible right of camera) ──
+            HStack(spacing: 4) {
+                if let parts = activityTextParts {
+                    Text(parts.project)
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.6))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+
+                if activeSessionCount > 0 {
+                    Text("×\(activeSessionCount)")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(badgeColor)
+                }
+            }
+            .padding(.trailing, 6)
+        }
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
                 pulsePhase = true
             }
         }
