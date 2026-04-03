@@ -1,5 +1,5 @@
 import { motion } from "motion/react"
-import { Apple } from "lucide-react"
+import { Download } from "lucide-react"
 import MacBookMockup from "./MacBookMockup"
 import logo from "../lib/logo"
 
@@ -61,7 +61,7 @@ export default function Hero() {
               href="https://github.com/xmqywx/CodeIsland/releases"
               className="group flex items-center gap-2.5 bg-green text-deep px-8 py-3.5 rounded-xl font-mono text-sm font-bold transition-all duration-300 hover:shadow-[0_0_40px_rgba(52,211,153,0.3)] hover:scale-[1.03]"
             >
-              <Apple size={16} />
+              <Download size={16} />
               免费下载
             </a>
             <a
