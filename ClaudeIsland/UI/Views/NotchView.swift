@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Combine
 import CoreGraphics
 import SwiftUI
 
@@ -25,6 +26,12 @@ struct NotchView: View {
     @State private var isVisible: Bool = false
     @State private var isHovering: Bool = false
     @State private var isBouncing: Bool = false
+    @State private var autoCollapseTimer: DispatchWorkItem? = nil
+    /// Track previous phases to detect transitions from working states to waitingForInput
+    @State private var previousPhases: [String: SessionPhase] = [:]
+
+    @AppStorage("smartSuppression") private var smartSuppression: Bool = true
+    @AppStorage("autoCollapseOnMouseLeave") private var autoCollapseOnMouseLeave: Bool = true
 
     @Namespace private var activityNamespace
 
@@ -221,6 +228,25 @@ struct NotchView: View {
                     .onHover { hovering in
                         withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
                             isHovering = hovering
+                        }
+
+                        // Auto-collapse on mouse leave (Task 2)
+                        if hovering {
+                            // Mouse re-entered: cancel pending auto-collapse
+                            autoCollapseTimer?.cancel()
+                            autoCollapseTimer = nil
+                        } else if autoCollapseOnMouseLeave && viewModel.status == .opened {
+                            // Mouse left: start 1.5s countdown unless waiting for approval
+                            let hasApprovalPending = sessionMonitor.instances.contains { $0.phase.isWaitingForApproval }
+                            if !hasApprovalPending {
+                                let workItem = DispatchWorkItem { [self] in
+                                    if !isHovering && viewModel.status == .opened {
+                                        viewModel.notchClose()
+                                    }
+                                }
+                                autoCollapseTimer = workItem
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: workItem)
+                            }
                         }
                     }
                     .simultaneousGesture(
@@ -423,7 +449,13 @@ struct NotchView: View {
         if !newPendingIds.isEmpty &&
            viewModel.status == .closed &&
            !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace() {
-            viewModel.notchOpen(reason: .notification)
+            // Smart suppression: don't auto-expand if the user's terminal is frontmost
+            if smartSuppression && TerminalVisibilityDetector.isTerminalFrontmost() {
+                // Terminal is frontmost — user is already looking at it.
+                // Still show collapsed status update, just don't expand.
+            } else {
+                viewModel.notchOpen(reason: .notification)
+            }
         }
 
         previousPendingIds = currentIds
@@ -474,11 +506,49 @@ struct NotchView: View {
                 }
             }
 
+            // Auto-popup: if a session transitioned FROM processing/compacting TO waitingForInput,
+            // expand the notch and show that session's chat after a 1-second delay
+            let sessionsFromWorkingState = newlyWaitingSessions.filter { session in
+                guard let prevPhase = previousPhases[session.stableId] else { return false }
+                return prevPhase == .processing || prevPhase == .compacting
+            }
+
+            if !sessionsFromWorkingState.isEmpty && viewModel.status == .closed {
+                // Use the first session that completed (most relevant)
+                let completedSession = sessionsFromWorkingState[0]
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
+                    // Re-check conditions after delay to avoid false triggers from rapid state changes
+                    guard viewModel.status == .closed else { return }
+                    // Verify the session is still in waitingForInput
+                    guard sessionMonitor.instances.contains(where: {
+                        $0.stableId == completedSession.stableId && $0.phase == .waitingForInput
+                    }) else { return }
+
+                    viewModel.notchOpen(reason: .notification)
+                    // Show the completed session's chat
+                    if let currentSession = sessionMonitor.instances.first(where: {
+                        $0.stableId == completedSession.stableId
+                    }) {
+                        viewModel.showChat(for: currentSession)
+                    }
+                }
+            }
+
             // Schedule hiding the checkmark after 30 seconds
             DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [self] in
                 // Trigger a UI update to re-evaluate hasWaitingForInput
                 handleProcessingChange()
             }
+        }
+
+        // Update previous phases for all current instances
+        for instance in instances {
+            previousPhases[instance.stableId] = instance.phase
+        }
+        // Clean up phases for sessions that no longer exist
+        let currentStableIds = Set(instances.map { $0.stableId })
+        for key in previousPhases.keys where !currentStableIds.contains(key) {
+            previousPhases.removeValue(forKey: key)
         }
 
         previousWaitingForInputIds = currentIds
@@ -503,9 +573,25 @@ struct NotchView: View {
     }
 }
 
+// MARK: - Animated Ellipsis
+
+/// Cycles dots: `.` -> `..` -> `...` -> `.` -> ...
+/// Used for "working" / "processing" status in the collapsed notch.
+struct AnimatedEllipsis: View {
+    @State private var dotCount = 0
+    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Text(String(repeating: ".", count: dotCount + 1))
+            .onReceive(timer) { _ in
+                dotCount = (dotCount + 1) % 3
+            }
+    }
+}
+
 // MARK: - Collapsed Notch Content (Dynamic Island Style)
 
-/// Shows session dots + pixel character + scrolling text in the collapsed notch.
+/// Shows session dots + pixel character + rotating carousel text in the collapsed notch.
 struct CollapsedNotchContent: View {
     let sessions: [SessionState]
     let mostUrgentState: AnimationState
@@ -515,6 +601,52 @@ struct CollapsedNotchContent: View {
     var activityNamespace: Namespace.ID
     /// Timestamps when sessions entered waitingForInput, keyed by stableId
     var waitingForInputTimestamps: [String: Date]
+
+    // MARK: - Content Carousel
+
+    /// Current carousel slide index
+    @State private var carouselIndex: Int = 0
+    /// Timer that advances the carousel every 3 seconds
+    private let carouselTimer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+
+    /// The total number of carousel slides
+    private let carouselSlideCount = 4
+
+    /// The most active session (highest priority, most recently active)
+    private var mostActiveSession: SessionState? {
+        sessions
+            .filter { $0.phase != .ended }
+            .max { a, b in a.lastActivity < b.lastActivity }
+    }
+
+    /// Whether the current status text represents a "working" state that should use animated dots
+    private var isWorkingStatus: Bool {
+        mostUrgentState == .working || mostUrgentState == .thinking
+    }
+
+    /// The status text label without trailing dots (for animated ellipsis pairing)
+    private var statusLabelWithoutDots: String? {
+        guard let parts = activityTextParts else { return nil }
+        var s = parts.status
+        // Strip trailing dots / ellipsis so AnimatedEllipsis can replace them
+        while s.hasSuffix("...") || s.hasSuffix("\u{2026}") {
+            if s.hasSuffix("...") {
+                s = String(s.dropLast(3))
+            } else {
+                s = String(s.dropLast(1))
+            }
+        }
+        while s.hasSuffix(".") {
+            s = String(s.dropLast(1))
+        }
+        return s
+    }
+
+    /// Duration string for the most active session (e.g. "27m")
+    private var durationString: String? {
+        guard let session = mostActiveSession else { return nil }
+        return SessionPhaseHelpers.timeAgo(session.createdAt)
+    }
 
     /// Color for a session dot based on its phase
     private func dotColor(for phase: SessionPhase) -> Color {
@@ -644,14 +776,10 @@ struct CollapsedNotchContent: View {
                         .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: true)
                 }
 
-                // Status text
-                if let parts = activityTextParts {
-                    Text(parts.status)
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundStyle(statusGradient)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
+                // Carousel status text (rotates between different info every 3s)
+                carouselContent
+                    .frame(height: 16)
+                    .clipped()
             }
             .padding(.leading, 6)
 
@@ -668,12 +796,17 @@ struct CollapsedNotchContent: View {
                 }
 
                 if activeSessionCount > 0 {
-                    Text("×\(activeSessionCount)")
+                    Text("\u{00D7}\(activeSessionCount)")
                         .font(.system(size: 13, weight: .bold, design: .monospaced))
                         .foregroundColor(badgeColor)
                 }
             }
             .padding(.trailing, 6)
+        }
+        .onReceive(carouselTimer) { _ in
+            withAnimation(.easeInOut(duration: 0.3)) {
+                carouselIndex = (carouselIndex + 1) % carouselSlideCount
+            }
         }
         .onAppear {
             withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
@@ -689,6 +822,121 @@ struct CollapsedNotchContent: View {
         .onDisappear {
             unattendedTimer?.invalidate()
             unattendedTimer = nil
+        }
+    }
+
+    // MARK: - Carousel Content
+
+    @ViewBuilder
+    private var carouselContent: some View {
+        let slide = carouselIndex % carouselSlideCount
+        Group {
+            switch slide {
+            case 0:
+                // Slide 0: Status text (current behavior) with animated ellipsis for working states
+                carouselStatusText
+            case 1:
+                // Slide 1: Task title / first user message of most active session
+                carouselTaskTitle
+            case 2:
+                // Slide 2: Last tool name + action (e.g. "Edit: middleware.ts")
+                carouselToolAction
+            case 3:
+                // Slide 3: Project name + duration (e.g. "CodeIsland \u{00B7} 27m")
+                carouselProjectDuration
+            default:
+                carouselStatusText
+            }
+        }
+        .transition(.push(from: .bottom))
+        .animation(.easeInOut(duration: 0.3), value: carouselIndex)
+        .id(slide)  // Force view identity change for transition
+    }
+
+    @ViewBuilder
+    private var carouselStatusText: some View {
+        if isWorkingStatus, let label = statusLabelWithoutDots {
+            HStack(spacing: 0) {
+                Text(label)
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundStyle(statusGradient)
+                    .lineLimit(1)
+                    .fixedSize()
+                AnimatedEllipsis()
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundStyle(statusGradient)
+                    .fixedSize()
+            }
+        } else if let parts = activityTextParts {
+            Text(parts.status)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundStyle(statusGradient)
+                .lineLimit(1)
+                .fixedSize()
+        }
+    }
+
+    @ViewBuilder
+    private var carouselTaskTitle: some View {
+        if let session = mostActiveSession,
+           let title = session.firstUserMessage ?? session.conversationInfo.summary {
+            let truncated = title.count > 24 ? String(title.prefix(24)) + "\u{2026}" : title
+            Text(truncated)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundStyle(statusGradient)
+                .lineLimit(1)
+                .fixedSize()
+        } else {
+            // Fall back to status text if no task title available
+            carouselStatusText
+        }
+    }
+
+    /// Formatted tool action string for carousel slide 2
+    private var toolActionLabel: String? {
+        guard let session = mostActiveSession,
+              let toolName = session.lastToolName else { return nil }
+        if let msg = session.lastMessage {
+            let components = msg.components(separatedBy: CharacterSet(charactersIn: "/\\"))
+            let filename = components.last ?? msg
+            let short = filename.count > 18 ? String(filename.prefix(18)) + "\u{2026}" : filename
+            return "\(toolName): \(short)"
+        }
+        return toolName
+    }
+
+    @ViewBuilder
+    private var carouselToolAction: some View {
+        if let label = toolActionLabel {
+            Text(label)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundStyle(statusGradient)
+                .lineLimit(1)
+                .fixedSize()
+        } else {
+            // Fall back to status text if no tool info
+            carouselStatusText
+        }
+    }
+
+    @ViewBuilder
+    private var carouselProjectDuration: some View {
+        if let session = mostActiveSession {
+            let duration = durationString ?? ""
+            let display = duration.isEmpty
+                ? session.projectName
+                : "\(session.projectName) \u{00B7} \(duration)"
+            Text(display)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundStyle(statusGradient)
+                .lineLimit(1)
+                .fixedSize()
+        } else if let parts = activityTextParts {
+            Text(parts.project)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundStyle(statusGradient)
+                .lineLimit(1)
+                .fixedSize()
         }
     }
 

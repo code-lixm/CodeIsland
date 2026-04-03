@@ -162,6 +162,16 @@ actor SessionStore {
             session.subagentState = SubagentState()
         }
 
+        // When transitioning to waitingForInput, eagerly parse conversationInfo
+        // so smartSummary is available immediately (don't wait for debounced file sync)
+        if session.phase == .waitingForInput && session.conversationInfo.firstUserMessage == nil {
+            let conversationInfo = await ConversationParser.shared.parse(
+                sessionId: sessionId,
+                cwd: event.cwd
+            )
+            session.conversationInfo = conversationInfo
+        }
+
         sessions[sessionId] = session
         publishState()
 

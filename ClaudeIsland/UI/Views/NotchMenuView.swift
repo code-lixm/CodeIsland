@@ -18,6 +18,8 @@ struct NotchMenuView: View {
     @ObservedObject private var soundSelector = SoundSelector.shared
     @AppStorage("showGroupedSessions") private var showGrouped: Bool = false
     @AppStorage("usePixelCat") private var usePixelCat: Bool = false
+    @AppStorage("smartSuppression") private var smartSuppression: Bool = true
+    @AppStorage("autoCollapseOnMouseLeave") private var autoCollapseOnMouseLeave: Bool = true
     @State private var hooksInstalled: Bool = false
     @State private var launchAtLogin: Bool = false
 
@@ -53,6 +55,22 @@ struct NotchMenuView: View {
                 isOn: usePixelCat
             ) {
                 usePixelCat.toggle()
+            }
+
+            MenuToggleRow(
+                icon: "eye.slash",
+                label: L10n.smartSuppression,
+                isOn: smartSuppression
+            ) {
+                smartSuppression.toggle()
+            }
+
+            MenuToggleRow(
+                icon: "rectangle.compress.vertical",
+                label: L10n.autoCollapseOnMouseLeave,
+                isOn: autoCollapseOnMouseLeave
+            ) {
+                autoCollapseOnMouseLeave.toggle()
             }
 
             // Language picker

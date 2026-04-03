@@ -169,4 +169,9 @@ enum L10n {
     // MARK: - Notch view status text
 
     static func approveWhat(_ tool: String) -> String { tr("\(L10n.approve) \(tool)?", "\(L10n.approve) \(tool)?") }
+
+    // MARK: - Smart interactions
+
+    static var smartSuppression: String { tr("Smart Suppression", "智能抑制") }
+    static var autoCollapseOnMouseLeave: String { tr("Auto-Collapse on Leave", "离开时自动收起") }
 }
