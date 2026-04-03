@@ -55,6 +55,8 @@ enum L10n {
     static var archived: String { tr("archived", "已归档") }
     static var active: String { tr("active", "活跃") }
 
+    static func showAllSessions(_ count: Int) -> String { tr("Show all \(count) sessions", "显示全部 \(count) 个会话") }
+
     // MARK: - Menu
 
     static var back: String { tr("Back", "返回") }

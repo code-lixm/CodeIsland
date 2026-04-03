@@ -247,6 +247,15 @@ struct ClaudeInstancesView: View {
                         .padding(.horizontal, 16)
                     }
                 }
+
+                // "Show all N sessions" footer
+                if sortedInstances.count > 0 {
+                    Text(L10n.showAllSessions(sortedInstances.count))
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.2))
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                }
             }
             .padding(.horizontal, 2)
             .padding(.vertical, 2)
@@ -328,11 +337,13 @@ struct InstanceRow: View {
     let onReject: () -> Void
 
     @State private var isHovered = false
-    @State private var isYabaiAvailable = false
 
-    private static let rowBackground = Color(red: 0.11, green: 0.11, blue: 0.18)  // #1C1C2E
-    private static let rowBorder = Color.white.opacity(0.08)
-    private static let purple = Color(red: 0.7, green: 0.4, blue: 0.9)
+    // MARK: - Colors
+
+    /// Blue pill colors for "Claude" tag
+    private static let claudeTagBg = Color(red: 0.145, green: 0.388, blue: 0.922).opacity(0.2) // #2563EB @ 0.2
+    private static let claudeTagFg = Color(red: 0.376, green: 0.647, blue: 0.98) // #60A5FA
+    private static let cyanColor = Color(red: 0.4, green: 0.91, blue: 0.98)
 
     /// Whether we're showing the approval UI
     private var isWaitingForApproval: Bool {
@@ -345,12 +356,15 @@ struct InstanceRow: View {
         return toolName == "AskUserQuestion"
     }
 
-    /// Duration since session started, formatted as "Xm" or "Xh"
+    /// Duration since session started, formatted as "<Xm" or "Xh"
     private var durationText: String {
         let elapsed = Date().timeIntervalSince(session.createdAt)
         let minutes = Int(elapsed / 60)
+        if minutes < 1 {
+            return "<1m"
+        }
         if minutes < 60 {
-            return "\(max(1, minutes))m"
+            return "\(minutes)m"
         }
         let hours = minutes / 60
         return "\(hours)h"
@@ -361,113 +375,93 @@ struct InstanceRow: View {
         session.terminalApp ?? (session.isInTmux ? "tmux" : "term")
     }
 
-    /// Accent color based on phase
+    /// Accent color based on phase (used for status dot)
     private var accentColor: Color {
         switch session.phase {
-        case .processing, .compacting: return Color(red: 0.4, green: 0.91, blue: 0.98) // cyan
+        case .processing, .compacting: return Self.cyanColor
         case .waitingForApproval: return Color(red: 0.96, green: 0.62, blue: 0.04) // amber
         case .waitingForInput: return Color(red: 0.29, green: 0.87, blue: 0.5)  // green
         case .idle, .ended: return Color.white.opacity(0.2)
         }
     }
 
-    /// Status badge text and color
-    private var statusBadge: (text: String, color: Color)? {
-        switch session.phase {
-        case .processing:
-            return ("进行中", Color(red: 0.4, green: 0.91, blue: 0.98))
-        case .compacting:
-            return ("压缩中", Color(red: 0.7, green: 0.4, blue: 0.9))
-        case .waitingForApproval:
-            return ("待审批", Color(red: 0.96, green: 0.62, blue: 0.04))
-        case .waitingForInput:
-            return ("已完成", Color(red: 0.29, green: 0.87, blue: 0.5))
-        case .idle:
-            return ("空闲", Color.white.opacity(0.3))
-        case .ended:
-            return ("已结束", Color.white.opacity(0.25))
+    /// Title text: "projectName · displayTitle" or just projectName if same
+    private var titleText: String {
+        let display = session.displayTitle
+        if display == session.projectName {
+            return session.projectName
         }
-    }
-
-    /// Lighter tint for title text
-    private var titleColor: Color {
-        switch session.phase {
-        case .processing, .compacting: return Color(red: 0.88, green: 0.97, blue: 1.0) // light cyan
-        case .waitingForApproval: return Color(red: 1.0, green: 0.95, blue: 0.78) // light amber
-        case .waitingForInput: return Color(red: 0.82, green: 0.98, blue: 0.88)  // light green
-        case .idle, .ended: return Color.white.opacity(0.4)
-        }
+        return "\(session.projectName) \u{00B7} \(display)"
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                // Cat face for all states
-                PixelCharacterView(state: session.phase.animationState)
-                    .scaleEffect(0.28)
-                    .frame(width: 16, height: 16)
-                    .padding(.top, 2)
+            HStack(alignment: .top, spacing: 6) {
+                // Status dot with glow
+                Circle()
+                    .fill(accentColor)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: accentColor.opacity(0.6), radius: 3, x: 0, y: 0)
+                    .padding(.top, 5)
 
                 // Content
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     // Title row
                     HStack(spacing: 4) {
-                        Text(session.displayTitle)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(titleColor)
+                        Text(titleText)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.85))
                             .lineLimit(1)
-
-                        // Status badge
-                        if let badge = statusBadge {
-                            Text(badge.text)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(badge.color)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(
-                                    Capsule().fill(badge.color.opacity(0.15))
-                                )
-                        }
 
                         Spacer(minLength: 0)
 
-                        // Terminal tag
-                        Text(terminalTag)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.35))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.06)))
+                        // "Claude" blue pill tag
+                        Text("Claude")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundColor(Self.claudeTagFg)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule().fill(Self.claudeTagBg)
+                            )
 
+                        // Terminal tag — grey pill
+                        Text(terminalTag)
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(.white.opacity(0.35))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule().fill(Color.white.opacity(0.06))
+                            )
+
+                        // Duration
                         Text(durationText)
-                            .font(.system(size: 11))
+                            .font(.system(size: 10))
                             .foregroundColor(.white.opacity(0.3))
                     }
 
-                    // Subtitle
+                    // Subtitle (2 lines)
                     subtitleView
-                }
 
-                // Jump to terminal button — always visible as long as PID or TTY exists
-                if session.pid != nil || session.tty != nil {
-                    Button {
-                        onFocus()
-                    } label: {
-                        Image(systemName: "terminal")
-                            .font(.system(size: 12))
-                            .foregroundColor(isHovered ? Color(red: 1.0, green: 0.84, blue: 0.25) : .white.opacity(0.3))
-                            .frame(width: 22, height: 22)
-                            .background(Circle().fill(isHovered ? Color(red: 1.0, green: 0.84, blue: 0.25).opacity(0.12) : Color.white.opacity(0.06)))
+                    // Approval buttons row when needed
+                    if isWaitingForApproval {
+                        InlineApprovalButtons(
+                            onChat: onChat,
+                            onApprove: onApprove,
+                            onReject: onReject
+                        )
+                        .padding(.top, 2)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.top, 2)
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
             .padding(.vertical, 7)
             .contentShape(Rectangle())
-            .background(isHovered ? Color.white.opacity(0.1) : Color.clear)
-            .cornerRadius(8)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovered ? Color.white.opacity(0.06) : Color.clear)
+            )
         }
         .onHover { isHovered = $0 }
     }
@@ -477,152 +471,124 @@ struct InstanceRow: View {
     @ViewBuilder
     private var subtitleView: some View {
         if isWaitingForApproval, let toolName = session.pendingToolName {
-            HStack(spacing: 4) {
-                Text(MCPToolFormatter.formatToolName(toolName))
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(TerminalColors.amber.opacity(0.9))
-                if isInteractiveTool {
-                    Text(L10n.needsInput)
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.5))
+            // Approval state: show tool info as subtitle
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 2) {
+                    Text(L10n.you)
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.35))
+                    Text(MCPToolFormatter.formatToolName(toolName))
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.55))
                         .lineLimit(1)
-                } else if let input = session.pendingToolInput {
-                    Text(input)
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.5))
-                        .lineLimit(1)
+                }
+                HStack(spacing: 2) {
+                    Text("AI ")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(Self.cyanColor.opacity(0.7))
+                    if isInteractiveTool {
+                        Text(L10n.needsInput)
+                            .font(.system(size: 9))
+                            .foregroundColor(Self.cyanColor.opacity(0.5))
+                            .lineLimit(1)
+                    } else if let input = session.pendingToolInput {
+                        Text(input)
+                            .font(.system(size: 9))
+                            .foregroundColor(Self.cyanColor.opacity(0.5))
+                            .lineLimit(1)
+                    }
                 }
             }
         } else if let summary = session.smartSummary {
-            // Show smart summary with color-coded lines
+            // Smart summary with role prefixes
             VStack(alignment: .leading, spacing: 1) {
-                // Split summary into lines (line 1 = user, line 2 = claude)
                 let parts = summary.components(separatedBy: "\n")
                 if parts.count >= 2 {
-                    // User question
-                    HStack(spacing: 2) {
-                        Text("你")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.4))
+                    // Line 1: user question
+                    HStack(spacing: 0) {
+                        Text(L10n.you)
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.35))
                         Text(parts[0])
                             .font(.system(size: 9))
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(.white.opacity(0.55))
                             .lineLimit(1)
                     }
-                    // Claude reply
-                    HStack(spacing: 2) {
-                        Text("AI")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(Color(red: 0.4, green: 0.91, blue: 0.98).opacity(0.7))
+                    // Line 2: AI reply
+                    HStack(spacing: 0) {
+                        Text("AI ")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(Self.cyanColor.opacity(0.7))
                         Text(parts[1])
                             .font(.system(size: 9))
-                            .foregroundColor(Color(red: 0.4, green: 0.91, blue: 0.98).opacity(0.5))
+                            .foregroundColor(Self.cyanColor.opacity(0.45))
                             .lineLimit(1)
                     }
                 } else {
-                    Text(summary)
-                        .font(.system(size: 9))
-                        .foregroundColor(.white.opacity(0.5))
-                        .lineLimit(1)
+                    // Single line summary — show as AI line
+                    HStack(spacing: 0) {
+                        Text("AI ")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(Self.cyanColor.opacity(0.7))
+                        Text(summary)
+                            .font(.system(size: 9))
+                            .foregroundColor(Self.cyanColor.opacity(0.45))
+                            .lineLimit(1)
+                    }
                 }
             }
         } else if let role = session.lastMessageRole {
-            switch role {
-            case "tool":
-                HStack(spacing: 4) {
-                    if let toolName = session.lastToolName {
-                        Text(MCPToolFormatter.formatToolName(toolName))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.5))
+            // Fallback: show last message with role prefix
+            VStack(alignment: .leading, spacing: 1) {
+                switch role {
+                case "user":
+                    HStack(spacing: 0) {
+                        Text(L10n.you)
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.35))
+                        if let msg = session.lastMessage {
+                            Text(msg)
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.55))
+                                .lineLimit(1)
+                        }
                     }
-                    if let input = session.lastMessage {
-                        Text(input)
-                            .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.4))
-                            .lineLimit(1)
+                case "tool":
+                    HStack(spacing: 0) {
+                        Text("AI ")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(Self.cyanColor.opacity(0.7))
+                        if let toolName = session.lastToolName {
+                            Text(MCPToolFormatter.formatToolName(toolName))
+                                .font(.system(size: 9))
+                                .foregroundColor(Self.cyanColor.opacity(0.45))
+                                .lineLimit(1)
+                        }
                     }
-                }
-            case "user":
-                HStack(spacing: 4) {
-                    Text(L10n.you)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.5))
-                    if let msg = session.lastMessage {
-                        Text(msg)
-                            .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.4))
-                            .lineLimit(1)
+                default:
+                    HStack(spacing: 0) {
+                        Text("AI ")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(Self.cyanColor.opacity(0.7))
+                        if let msg = session.lastMessage {
+                            Text(msg)
+                                .font(.system(size: 9))
+                                .foregroundColor(Self.cyanColor.opacity(0.45))
+                                .lineLimit(1)
+                        }
                     }
-                }
-            default:
-                if let msg = session.lastMessage {
-                    Text(msg)
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.4))
-                        .lineLimit(1)
                 }
             }
         } else if let lastMsg = session.lastMessage {
-            Text(lastMsg)
-                .font(.system(size: 11))
-                .foregroundColor(.white.opacity(0.4))
-                .lineLimit(1)
-        }
-    }
-
-    // MARK: - Status Line
-
-    @ViewBuilder
-    private var statusLine: some View {
-        switch session.phase {
-        case .processing:
-            Text(L10n.working)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(TerminalColors.cyan)
-        case .waitingForApproval:
-            if isInteractiveTool {
-                // Interactive tools: show approval buttons inline on the status line
-                HStack(spacing: 6) {
-                    Text(L10n.needsApproval)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(TerminalColors.amber)
-                    Spacer()
-                    InlineApprovalButtons(
-                        onChat: onChat,
-                        onApprove: onApprove,
-                        onReject: onReject
-                    )
-                }
-            } else {
-                HStack(spacing: 6) {
-                    Text(L10n.needsApproval)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(TerminalColors.amber)
-                    Spacer()
-                    InlineApprovalButtons(
-                        onChat: onChat,
-                        onApprove: onApprove,
-                        onReject: onReject
-                    )
-                }
+            HStack(spacing: 0) {
+                Text("AI ")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(Self.cyanColor.opacity(0.7))
+                Text(lastMsg)
+                    .font(.system(size: 9))
+                    .foregroundColor(Self.cyanColor.opacity(0.45))
+                    .lineLimit(1)
             }
-        case .waitingForInput:
-            Button {
-                onFocus()
-            } label: {
-                Text(L10n.doneJump)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(TerminalColors.green)
-            }
-            .buttonStyle(.plain)
-        case .compacting:
-            Text(L10n.compacting)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Self.purple)
-        case .idle, .ended:
-            Text(L10n.idle)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.white.opacity(0.25))
         }
     }
 }
