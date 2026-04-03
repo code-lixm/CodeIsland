@@ -172,6 +172,41 @@ struct SessionState: Equatable, Identifiable, Sendable {
             return prefix
         }
 
+        // Fallback: directly read JSONL to extract first user message
+        return Self.directParseFirstMessage(sessionId: sessionId, cwd: cwd)
+    }
+
+    /// Emergency fallback: read JSONL directly without going through ConversationParser
+    private static func directParseFirstMessage(sessionId: String, cwd: String) -> String? {
+        let projectDir = cwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
+        let path = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/" + sessionId + ".jsonl"
+
+        guard let data = FileManager.default.contents(atPath: path),
+              let content = String(data: data, encoding: .utf8) else { return nil }
+
+        // Only scan first 200 lines for efficiency
+        let lines = content.components(separatedBy: "\n")
+        for line in lines.prefix(200) {
+            guard !line.isEmpty,
+                  let ld = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: ld) as? [String: Any],
+                  json["type"] as? String == "user",
+                  !(json["isMeta"] as? Bool ?? false),
+                  let msg = json["message"] as? [String: Any] else { continue }
+
+            if let c = msg["content"] as? String, !c.hasPrefix("<command-name>"), !c.hasPrefix("<local-command") {
+                return String(c.prefix(50))
+            }
+            if let arr = msg["content"] as? [[String: Any]] {
+                for b in arr {
+                    if b["type"] as? String == "text",
+                       let t = b["text"] as? String,
+                       !t.hasPrefix("<command-name>"), !t.hasPrefix("<local-command") {
+                        return String(t.prefix(50))
+                    }
+                }
+            }
+        }
         return nil
     }
 
