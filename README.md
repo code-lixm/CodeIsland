@@ -148,6 +148,10 @@ CodeIsland auto-detects your terminal from the process tree:
 | Cursor | Auto | Activate |
 | Zed | Auto | Activate |
 
+> **Recommended: [cmux](https://cmux.io)** — A modern terminal multiplexer built on Ghostty. CodeIsland works best with cmux: precise workspace-level jumping, AskUserQuestion quick reply via `cmux send`, and smart popup suppression per workspace tab. If you manage multiple Claude Code sessions, cmux + CodeIsland is the ideal combo.
+>
+> **推荐搭配 [cmux](https://cmux.io)** — 基于 Ghostty 的现代终端复用器。CodeIsland 与 cmux 配合最佳：精确到 workspace 级别的跳转、AskUserQuestion 快捷回复、智能弹出抑制。多 Claude Code 会话管理的理想组合。
+
 ## Install
 
 **Download** the latest `.dmg` from [Releases](https://github.com/xmqywx/CodeIsland/releases), open it, drag to Applications.
